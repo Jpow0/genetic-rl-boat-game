@@ -1,34 +1,34 @@
 # genetic-rl-boat-game
 
-A simple genetic reinforcement learning algorithm tested in a real-time boat game, in Python.
+A small project with **genetic reinforcement learning** in a real-time boat game, built in Python.
 
 ## Overview
 
-This project explores **genetic reinforcement learning** using a real-time boat simulation.  
-Agents are controlled by small neural networks whose weights are evolved through **selection, mutation, and crossover**, without backpropagation.
+This project explores genetic reinforcement learning through a simple boat simulation.  
+Agents are controlled by small neural networks whose weights evolve over time via  
+**selection, mutation, and crossover** — no backpropagation involved.
 
-## Key Features
+## Features
 
 - Real-time visual simulation
-- Neuroevolutionary reinforcement learning
+- Evolution-based reinforcement learning
 - Continuous control
-- No gradients, no dataset
+- No gradients. No dataset. Just simulation-based learning.
 
-## Librarys
+## Libraries
 
-- NumPy
-- Ursina
-- Pandas
+- NumPy  
+- Ursina  
+- Pandas  
 
 ## Demo
 
 ![Boat learning demo](media/demo.gif)
 
-## In Progress
+## In Progress 
 
-- Improve the reward system
-- Add a "Play Test" button
-- Add an option to turn off fancy graphics
-- Export best weights/biases and scores to Excel
-- Add a simple dashboard or graphs to visualize learning
- 
+- Improve the reward system  
+- Add a "Play Test" button  
+- Optional toggle for fancy graphics  
+- Export best weights/biases and scores to Excel  
+- Simple dashboard or plots to visualize learning  
