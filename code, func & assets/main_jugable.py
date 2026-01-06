@@ -1,13 +1,12 @@
 #=--=--=--=--=--=--=--=--=--=
 # LIBRERÍAS
 #=--=--=--=--=--=--=--=--=--=
-
 # Entorno
-from ursina import destroy,time,math,Vec3,invoke,curve,window,DirectionalLight,Sky,Ursina,camera,Button,Text,application
+from ursina import *
 from ursina.shaders import lit_with_shadows_shader
 
 # Utilidades
-from random import choice, sample, uniform
+from random import choice, uniform
 import numpy as np
 
 # Funciones y parámetros personalizados
@@ -16,11 +15,16 @@ from red import *
 from config import *
 
 #=--=--=--=--=--=--=--=--=--=
+# CONFIG
+#=--=--=--=--=--=--=--=--=--=
+
+num_botes = 4
+#=--=--=--=--=--=--=--=--=--=
 # CLASE BOTE
 #=--=--=--=--=--=--=--=--=--=
 
 class Bote(Entity):
-    def __init__(self, red=None):
+    def __init__(self, red=None,jugable = False):
         super().__init__()
 
         # Configuración visual del bote
@@ -29,12 +33,14 @@ class Bote(Entity):
         self.texture = 'barco'
         self.shader = lit_with_shadows_shader
         self.color = color.white
+        self.vx = 0
+        self.vz = 0
 
         # Posición inicial
         self.position = centro
 
         # Red neuronal
-        self.red = red or RedNeuronal()
+        self.red = red
 
         # Variables de estado
         self.velocidad = velocidad_base
@@ -50,12 +56,14 @@ class Bote(Entity):
         self.direccion_x = 0
         self.direccion_z = 0
 
+        self.jugable = jugable
+
         # Objetivos
         self.obj_entidades = []
         self.crear_obj()
 
     #=--=--=--=--=--=--=--=--=--=
-    # Crear objivos
+    # Crear objetos (peces u objetivos)
     def crear_obj(self):
         for objetivo in self.obj_entidades:
             destroy(objetivo)
@@ -65,13 +73,15 @@ class Bote(Entity):
             p = Entity(
                 model=None,
                 texture=None,
+                scale=0.7,
+                color=color.white,
+                shader=lit_with_shadows_shader,
                 position=pos
             )
             self.obj_entidades.append(p)
 
-    # =--=--=--=--=--=--=--=--=--=
+    #=--=--=--=--=--=--=--=--=--=
     # Resetear bote
-
     def reset(self):
         self.position = centro
         self.rotation_y = 0
@@ -93,42 +103,68 @@ class Bote(Entity):
     #=--=--=--=--=--=--=--=--=--=
     # Lógica por frame
     def actualizar(self):
+        
         if not self.vivo:
             self.y -= 0.5 * time.dt
             return
 
-        # Animación de ascenso al recolectar 3 objetos
         if self.obj_recolectados >= 3:
             self.y += 1 * time.dt
             return
         
+        if self.jugable:
+            # input jugador (fuerza)
+            ax = held_keys['d'] - held_keys['a']
+            az = held_keys['w'] - held_keys['s']
+
+            # suavizado tipo barco
+            alpha = 0.05
+            self.vx = (1 - alpha) * self.vx + alpha * ax
+            self.vz = (1 - alpha) * self.vz + alpha * az
+
+            # límite de velocidad
+            vmax = 1.0
+            vel = math.sqrt(self.vx**2 + self.vz**2)
+            if vel > vmax:
+                self.vx *= vmax / vel
+                self.vz *= vmax / vel
+
+            # movimiento
+            self.x += self.vx * self.velocidad * time.dt
+            self.z += self.vz * self.velocidad * time.dt
+
+            # ROTACIÓN (USAR VELOCIDAD, NO INPUT)
+            if vel > 0.05:
+                self.rotation_y = math.degrees(
+                    math.atan2(self.vx, self.vz)
+                ) % 360
+
+        # Animación de ascenso al recolectar 3 objetos
+
         else:
-            self.descuento -= (0.7 * time.dt* factor_velocidad)/ (self.obj_recolectados + 1)
+            self.descuento -= (0.7 * time.dt)/ (self.obj_recolectados + 1)
 
         avance = abs(self.x - self.last_x) + abs(self.z - self.last_z)
-        avance_esperado = self.velocidad * time.dt * factor_velocidad
+        avance_esperado = self.velocidad * time.dt 
 
         ratio = avance / (avance_esperado + 1e-8)  # evita división por 0
 
         if ratio < 0.2 and self.vivo:
-            self.descuento -= 0.3 * time.dt * factor_velocidad
-        
+            self.descuento -= 0.3 * time.dt 
         # Movimiento según la red neuronal
-        entrada = self.obtener_entradas()
-        salida = normalizar(self.red.forward(entrada))
+        if not self.jugable:
+            entrada = self.obtener_entradas()
+            salida = normalizar(self.red.forward(entrada))
 
-        alpha = 0.15 if factor_velocidad == 1 else 1
-        self.direccion_x = (1 - alpha) * self.direccion_x + alpha * salida[0]
-        self.direccion_z = (1 - alpha) * self.direccion_z + alpha * salida[1]
+            alpha = 0.1
+            self.direccion_x = (1 - alpha) * self.direccion_x + alpha * salida[0]
+            self.direccion_z = (1 - alpha) * self.direccion_z + alpha * salida[1]
 
         self.last_x, self.last_z = self.x, self.z
 
-        if factor_velocidad != 1:
-            self.x += self.direccion_x * time.dt * self.velocidad * factor_velocidad/2
-            self.z += self.direccion_z * time.dt * self.velocidad * factor_velocidad/2
-        else:
-            self.x += self.direccion_x * time.dt * self.velocidad  
-            self.z += self.direccion_z * time.dt * self.velocidad 
+
+        self.x += self.direccion_x * time.dt * self.velocidad  
+        self.z += self.direccion_z * time.dt * self.velocidad 
 
         # Rotación según dirección
         if abs(self.direccion_x) > 0.01 or abs(self.direccion_z) > 0.01:
@@ -140,7 +176,7 @@ class Bote(Entity):
             v_obj = np.array([objetivo.x - self.x, objetivo.z - self.z])
             v_obj /= np.linalg.norm(v_obj) + 1e-8
 
-            v_mov = np.array([self.direccion_x, self.direccion_z])
+            v_mov = np.array([self.direccion_x, self.direccion_z], dtype=float)
             v_mov /= np.linalg.norm(v_mov) + 1e-8
 
             self.descuento += np.dot(v_obj, v_mov) * 0.4 * time.dt 
@@ -162,10 +198,9 @@ class Bote(Entity):
         if dist_roca < umbral_choque + 0.1:
             self.descuento -= (1/dist_roca) * time.dt 
 
-        # definir set para obj
         # Recolectar objetivo
         for objetivo in self.obj_entidades[:]:
-            if dist2(self.position, objetivo.position) < 0.3:# and objetivo not in set
+            if dist2(self.position, objetivo.position) < 0.3:
                 self.obj_recolectados += 1
                 self.descuento += 6 + self.obj_recolectados * 2
                 destroy(objetivo)
@@ -177,8 +212,7 @@ class Bote(Entity):
             self.roca_alcanzada = True
             self.vivo = False
             self.descuento -= 3
-            if low_g == False:
-                animar_roca(roca_obj)
+            animar_roca(roca_obj)
 
         # Puntaje final
         self.puntaje = calcular_puntaje(self) + self.descuento
@@ -247,34 +281,6 @@ def finalizar_animacion_roca(roca, pos, rot):
     invoke(setattr, roca, 'animando', False, delay=0.18)
 
 #=--=--=--=--=--=--=--=--=--=
-# BOTONES 
-#=--=--=--=--=--=--=--=--=--=
-
-def toggle_velocidad():
-    global simulacion_rapida, factor_velocidad
-    simulacion_rapida = not simulacion_rapida
-    if simulacion_rapida:
-        factor_velocidad = 10
-        button.text = 'x10'
-        button.color = color.azure
-    else:
-        factor_velocidad = 1
-        button.text = 'x10'
-        button.color = color.blue
-    print(f"Modo {'RÁPIDO' if simulacion_rapida else 'NORMAL'} activado")
-
-
-def toggle_quality():
-    global fast_graphics
-    fast_graphics = not fast_graphics
-    if fast_graphics:
-        button2.color = color.azure
-        button2.text = 'LOW'
-    else:
-        button2.color = color.blue
-        button2.text = 'LOW'
-    
-#=--=--=--=--=--=--=--=--=--=
 # PUNTAJES
 #=--=--=--=--=--=--=--=--=--=
 
@@ -295,8 +301,8 @@ def reiniciar_ciclo():
     Reinicia la simulación, genera nuevas posiciones de objetivos y rocas,
     calcula estadísticas y aplica evolución/mutaciones a las redes neuronales de los botes.
     """
-    global posiciones_obj_actuales, tiempo_restante, ciclo, mejor_bote,low_g
-    
+    global posiciones_obj_actuales, tiempo_restante, ciclo, mejor_bote
+
     # Generar nuevas posiciones de los objetivos
     posiciones_obj_actuales = generar_posiciones_obj()
     for v, pos in zip(visual_objetivo, posiciones_obj_actuales):
@@ -306,27 +312,8 @@ def reiniciar_ciclo():
 
     # Generar posiciones de rocas evitando objetivos
     sistematico = rocas_prop_k_posibles(num_rocas=num_rocas, obj=obj_np)
-
     for i, d in enumerate(rocas):
         d.position = generar_posicion_roca(i, sistematico)
-
-        low_g = fast_graphics
-
-        if low_g == True and d.model != "cube":
-            d.model = "cube"
-            d.texture = None
-            d.color = "#AF6F43FF"
-            d.scale = 0.7
-            d.shader = None
-        if low_g == False and d.model != model_list[i]:
-            d.model = model_list[i]
-            d.texture = 'rock'
-            d.color = choice([color.white, color.dark_gray, color.light_gray, color.gray])
-            aux = 4 if model_list[i].endswith('roca-3_low.bam') else 1
-            size = uniform(0.3, 0.4)
-            d.scale = size*aux
-            d.shader = lit_with_shadows_shader
-
 
     # Estadísticas de puntaje
     puntajes = [b.puntaje for b in botes]
@@ -337,58 +324,11 @@ def reiniciar_ciclo():
     if ciclo % 10 == 0:
         print(f'Ciclo {ciclo}: Max={max_puntaje:.1f}, Min={min_puntaje:.1f}, Avg={avg_puntaje:.1f}')
     ciclo += 1
-
-    # Seleccionar mejor bote
-    mejor_bote = max(botes, key=lambda b: b.puntaje)
-
-    # Guardar mejor red cada 10 ciclos
-    if ciclo % 10 == 0:
-        guardar_mejor_red_txt(mejor_bote, ciclo)
-
-    # Evolución y reproducción
-    elite = sorted(botes, key=lambda b: b.puntaje, reverse=True)[:2]
-    nuevas_redes = [b.red for b in elite]
-
-    padres = sorted(botes, key=lambda b: b.puntaje, reverse=True)
-    padres = padres[:top_n] + sample(padres[top_n:], k=2)
-
-    while len(nuevas_redes) < num_botes:
-
-        tipo_descendencia = uniform(0, 1)
-
-        c = ciclo % 15
-        sigma = (0.18 if c <= 5 or ciclo <= 30 else 0.12 if c <= 10 else 0.08 if c <= 12 else 0.05 if c <= 15 else 0.12)
-
-        if tipo_descendencia < 0.20:  # Un padre
-            padre = choice(padres)
-            hijo_red = padre.red
-        elif tipo_descendencia < 0.4:  # Dos padres
-            p1, p2 = sample(padres, 2)
-            hijo_red = mezclar(p1, p2)
-        elif tipo_descendencia < 0.8:  # Padre + mutación
-            padre = choice(padres)
-            hijo_red = padre.red.mutar(sigma=sigma)
-        else:  # Dos padres + mutación
-            p1, p2 = sample(padres, 2)
-            hijo_red = mezclar(p1, p2).mutar(sigma=sigma)
-
-        #clip_red(hijo_red)
-        nuevas_redes.append(hijo_red)
-
     # Aplicar nuevas redes a los botes
-    for bote, red in zip(botes, nuevas_redes):
-        bote.red = red
-        if fast_graphics == True and bote.model != "cube":
-            bote.model = "cube"
-            bote.texture = None
-            bote.color = color.gray
-            bote.shader = None
-        if fast_graphics == False and bote.model != "assets/models_compressed/barco.bam":
-            bote.model = "assets/models_compressed/barco.bam"
-            bote.shader = lit_with_shadows_shader
+    for bote in botes:
         bote.reset()
 
-    tiempo_restante = tiempo_limite / factor_velocidad
+    tiempo_restante = tiempo_limite 
 
 #=--=--=--=--=--=--=--=--=--=
 # CONFIGURACIÓN URSINA
@@ -422,15 +362,13 @@ suelo = Entity(
 #=--=--=--=--=--=--=--=--=--=
 
 rocas = []
-model_list = []
 posiciones_obj_actuales = generar_posiciones_obj()
 
 for i in range(num_rocas):
     angulo = (0, randint(0, 360), 0)
     rocas_modelo = f"assets/models_compressed/roca-{choice(['1','2','3'])}_low.bam"
-    model_list.append(rocas_modelo)
     aux = 4 if rocas_modelo.endswith('roca-3_low.bam') else 1
-    size = uniform(0.3, 0.4)
+    size = uniform(0.35, 0.4)
     d = Entity(
         model=rocas_modelo,
         scale=size*aux,
@@ -452,19 +390,21 @@ botes = []
 for i in range(num_botes):
     if i == 0 and pesos_iniciales:
         botes.append(Bote(red=RedNeuronal(pesos=pesos_iniciales)))
+        botes[i].color =  "#90EE90"
+        botes[0].texture = 'barco'
     else:
-        botes.append(Bote())
+        botes.append(Bote(red=RedNeuronal(pesos=pesos_iniciales).mutar(0.4*i)))
+        botes[i].texture = 'barco_aux'
+        botes[i].color = [ "#CE80C7", "#5F9EA0" , "#FF7F50"][i-1]
 
-tiempo_restante = tiempo_limite / factor_velocidad
+bote_jugador = Bote(jugable=True)
+bote_jugador.color = "#DEB887"
+bote_jugador.texture = 'barco_aux'
+
+botes.append(bote_jugador)
+
+tiempo_restante = tiempo_limite 
 texto_puntaje = Text('', position=(-0.85, 0.45), scale=1)
-
-# Botón de control de velocidad
-button = Button(text='x10', color=color.blue, position=(0.8, -0.45), scale=(0.1, 0.05))
-button.on_click = toggle_velocidad
-
-button2 = Button(text='LOW', color=color.blue, position=(0.8, -0.35), scale=(0.1, 0.05))
-button2.on_click = toggle_quality
-
 
 # Puerto
 puerto = Entity(
@@ -473,7 +413,8 @@ puerto = Entity(
     position=(-1, -0.2, 6),
     texture='rock',
     shader=lit_with_shadows_shader,
-    color=color.light_gray )
+    color=color.light_gray
+)
 
 #=--=--=--=--=--=--=--=--=--=
 # UPDATE (LOOP PRINCIPAL)
@@ -488,25 +429,16 @@ def update():
 
     for bote in botes:
         bote.actualizar()
-    if low_g == False:
-        for v in visual_objetivo:
-            v.rotation_y += 20 * time.dt
+
+    for v in visual_objetivo:
+        v.rotation_y += 20 * time.dt
 
     # Actualización top N botes
     frame_count += 1
-    if frame_count % 30 == 1 or frame_count == 1:
+    if frame_count % 20 == 1 or frame_count == 1:
         top = sorted(botes, key=lambda b: b.puntaje, reverse=True)[:top_n]
         mvp = top[0]
         top_set = set(top)
-
-    for bote in botes:
-        if low_g == True and bote.model != "cube":
-            bote.model = "cube"
-            bote.texture = None
-            bote.color = color.gray
-            bote.scale = [0.5, 0.5, 0.65]
-        if low_g == False:
-            actualizar_visual_bote(bote, mvp, top_set)
 
     texto_puntaje.text = f'Ciclo: {ciclo} | Tiempo: {tiempo_restante:.1f}s \n\nMejor: {int(top[0].puntaje)}'
 
@@ -516,7 +448,6 @@ def update():
 
 def input(key):
     if key == 'escape':
-        guardar_mejor_red_txt(mejor_bote, ciclo)
         application.quit()
 
 #=--=--=--=--=--=--=--=--=--=
