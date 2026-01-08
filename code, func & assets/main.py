@@ -3,7 +3,7 @@
 #=--=--=--=--=--=--=--=--=--=
 
 # Entorno
-from ursina import destroy,time,math,Vec3,invoke,curve,window,DirectionalLight,Sky,Ursina,camera,Button,Text,application
+from ursina import time,math,Vec3,invoke,curve,window,DirectionalLight,Sky,Ursina,camera,Button,Text,application
 from ursina.shaders import lit_with_shadows_shader
 
 # Utilidades
@@ -17,7 +17,6 @@ from config import *
 
 #=--=--=--=--=--=--=--=--=--=
 # CLASE BOTE
-#=--=--=--=--=--=--=--=--=--=
 
 class Bote(Entity):
     def __init__(self, red=None):
@@ -45,7 +44,6 @@ class Bote(Entity):
         self.puntaje = 0
         self.descuento = 0
         self.obj_recolectados = 0
-        self.roca_alcanzada = False
         self.last_x, self.last_z = 0, 0
         self.direccion_x = 0
         self.direccion_z = 0
@@ -56,18 +54,21 @@ class Bote(Entity):
 
     #=--=--=--=--=--=--=--=--=--=
     # Crear objivos
-    def crear_obj(self):
-        for objetivo in self.obj_entidades:
-            destroy(objetivo)
-        self.obj_entidades.clear()
 
-        for pos in posiciones_obj_actuales:
-            p = Entity(
-                model=None,
-                texture=None,
-                position=pos
-            )
-            self.obj_entidades.append(p)
+    def crear_obj(self):
+        if not self.obj_entidades:   
+            for pos in posiciones_obj_actuales:
+                p = Entity(
+                    model=None,
+                    texture=None,
+                    position=pos,
+                    enabled=True)
+                self.obj_entidades.append(p)
+
+        else:
+            for p, pos in zip(self.obj_entidades, posiciones_obj_actuales):
+                p.position = pos
+                p.enabled = True
 
     # =--=--=--=--=--=--=--=--=--=
     # Resetear bote
@@ -80,7 +81,6 @@ class Bote(Entity):
 
         self.puntaje = 0
         self.obj_recolectados = 0
-        self.roca_alcanzada = False
         self.last_x, self.last_z = self.x, self.z
         self.direccion_x = 0
         self.direccion_z = 0
@@ -93,6 +93,7 @@ class Bote(Entity):
     #=--=--=--=--=--=--=--=--=--=
     # Lógica por frame
     def actualizar(self):
+
         if not self.vivo:
             self.y -= 0.5 * time.dt
             return
@@ -136,7 +137,10 @@ class Bote(Entity):
 
         # Interacción con el objetivo más cercano
         if self.obj_entidades:
-            objetivo = min(self.obj_entidades, key=lambda p: dist2(p.position, self.position))
+            objetivos_activos = [o for o in self.obj_entidades if o.enabled]
+            if objetivos_activos:
+                objetivo = min(objetivos_activos, key=lambda p: dist2(p.position, self.position))
+
             v_obj = np.array([objetivo.x - self.x, objetivo.z - self.z])
             v_obj /= np.linalg.norm(v_obj) + 1e-8
 
@@ -162,19 +166,17 @@ class Bote(Entity):
         if dist_roca < umbral_choque + 0.1:
             self.descuento -= (1/dist_roca) * time.dt 
 
-        # definir set para obj
+        
         # Recolectar objetivo
         for objetivo in self.obj_entidades[:]:
-            if dist2(self.position, objetivo.position) < 0.3:# and objetivo not in set
+            if dist2(self.position, objetivo.position) < 0.3 and objetivo.enabled:# and objetivo not in set
                 self.obj_recolectados += 1
                 self.descuento += 6 + self.obj_recolectados * 2
-                destroy(objetivo)
-                self.obj_entidades.remove(objetivo)
+                objetivo.enabled = False
                 break
 
         # Choque con roca
         if self.vivo and dist_roca < umbral_choque:
-            self.roca_alcanzada = True
             self.vivo = False
             self.descuento -= 3
             if low_g == False:
@@ -200,14 +202,48 @@ class Bote(Entity):
             dist_roca_1 = dist2(self.position, d1.position)
 
         # Objetivo más cercano
-        if self.obj_recolectados < 3 and self.obj_entidades:
-            objetivo_cercano = min(self.obj_entidades, key=lambda p: dist2(p.position, self.position))
-            dist_objetivo = dist2(self.position, objetivo_cercano.position)
-            dir_objetivo = math.degrees(math.atan2(objetivo_cercano.position.x - self.position.x,
-                                                  objetivo_cercano.position.z - self.position.z))
-        else:
-            dir_objetivo = 0
-            dist_objetivo = 0
+        # Buscar el objetivo ACTIVO más cercano
+        if self.obj_recolectados < 3:
+
+            mejor_obj = None                 # referencia al mejor objetivo encontrado
+            mejor_dist2 = float('inf')       # distancia² mínima encontrada
+
+            sx, sz = self.x, self.z          # cacheamos posición del bote (más barato)
+
+            for o in self.obj_entidades:     # recorremos TODOS los objetivos
+                if not o.enabled:            # ignorar objetivos ya recolectados
+                    continue
+
+                # Vector desde el bote al objetivo (solo XZ)
+                dx = o.x - sx
+                dz = o.z - sz
+
+                # Distancia al cuadrado (evita sqrt en el loop)
+                d2 = dx*dx + dz*dz
+
+                # Si este objetivo está más cerca que el anterior
+                if d2 < mejor_dist2:
+                    mejor_dist2 = d2
+                    mejor_obj = o
+
+            # Si existe al menos un objetivo activo
+            if mejor_obj is not None:
+
+                # Distancia REAL (solo una raíz)
+                dist_objetivo = math.sqrt(mejor_dist2)
+
+                # Dirección hacia el objetivo (en grados, coherente con tu código)
+                dir_objetivo = math.degrees(
+                    math.atan2(
+                        mejor_obj.x - sx,
+                        mejor_obj.z - sz
+                    )
+                )
+            else:
+                # No hay objetivos activos
+                dist_objetivo = 0
+                dir_objetivo = 0
+
 
         return np.array([
             
@@ -282,7 +318,7 @@ def calcular_puntaje(bote):
     puntaje = bote.obj_recolectados * 10
     if not bote.vivo:
         puntaje += -6
-    if bote.obj_recolectados >= 3 and not bote.roca_alcanzada:
+    if bote.obj_recolectados >= 3:
         puntaje += 5
     return puntaje
 
@@ -312,13 +348,14 @@ def reiniciar_ciclo():
 
         low_g = fast_graphics
 
-        if low_g == True and d.model != "cube":
+        if low_g == True and d.texture != None:
             d.model = "cube"
             d.texture = None
             d.color = "#AF6F43FF"
             d.scale = 0.7
             d.shader = None
-        if low_g == False and d.model != model_list[i]:
+            print("test")
+        if low_g == False and d.texture == None:
             d.model = model_list[i]
             d.texture = 'rock'
             d.color = choice([color.white, color.dark_gray, color.light_gray, color.gray])
@@ -326,6 +363,7 @@ def reiniciar_ciclo():
             size = uniform(0.3, 0.4)
             d.scale = size*aux
             d.shader = lit_with_shadows_shader
+            print(d.texture)
 
 
     # Estadísticas de puntaje
