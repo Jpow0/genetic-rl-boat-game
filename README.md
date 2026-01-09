@@ -12,23 +12,22 @@ Agents are controlled by small neural networks whose weights evolve over time vi
 
 - Real-time visual simulation
 - Evolution-based reinforcement learning
-- Continuous control
+- Playable human-vs-agent version.
 - No gradients. No dataset. Just simulation-based learning.
 
-## Libraries
+## Requirements
 
 - NumPy  
 - Ursina  
-- Pandas  
 
 ## Demo
 
 ![Boat learning demo](media/demo.gif)
 
-## In Progress 
+## In Progress:
 
-- Improve the reward system  
-- Add a "Play Test" button  
-- Optional toggle for fancy graphics  
-- Export best weights/biases and scores to Excel  
-- Simple dashboard or plots to visualize learning  
+- ~~Improve the reward system~~  
+- ~~Add a "Play Test" button~~  
+- ~~Optional toggle for fancy graphics~~  
+- ~~Export best weights/biases and scores to txt~~  
+- Simple dashboard or plots to visualize learning 
