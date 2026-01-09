@@ -18,7 +18,8 @@ from config import *
 # CONFIG
 #=--=--=--=--=--=--=--=--=--=
 
-num_botes = 4
+num_botes = 3
+tiempo_limite = 5.5
 #=--=--=--=--=--=--=--=--=--=
 # CLASE BOTE
 #=--=--=--=--=--=--=--=--=--=
@@ -65,20 +66,23 @@ class Bote(Entity):
     #=--=--=--=--=--=--=--=--=--=
     # Crear objetos (peces u objetivos)
     def crear_obj(self):
-        for objetivo in self.obj_entidades:
-            destroy(objetivo)
-        self.obj_entidades.clear()
+        if not self.obj_entidades:
+            for pos in posiciones_obj_actuales:
+                p = Entity(
+                    model=None,
+                    texture=None,
+                    scale=0.7,
+                    color=color.white,
+                    shader=lit_with_shadows_shader,
+                    position=pos,
+                    enabled=True
+                )
+                self.obj_entidades.append(p)
+        else:
+            for p, pos in zip(self.obj_entidades, posiciones_obj_actuales):
+                p.position = pos
+                p.enabled = True
 
-        for pos in posiciones_obj_actuales:
-            p = Entity(
-                model=None,
-                texture=None,
-                scale=0.7,
-                color=color.white,
-                shader=lit_with_shadows_shader,
-                position=pos
-            )
-            self.obj_entidades.append(p)
 
     #=--=--=--=--=--=--=--=--=--=
     # Resetear bote
@@ -103,6 +107,9 @@ class Bote(Entity):
     #=--=--=--=--=--=--=--=--=--=
     # Lógica por frame
     def actualizar(self):
+
+        if tiempo_restante > tiempo_limite - 0.5:
+            return
         
         if not self.vivo:
             self.y -= 0.5 * time.dt
@@ -112,6 +119,9 @@ class Bote(Entity):
             self.y += 1 * time.dt
             return
         
+        else:
+            self.descuento -= (2 * time.dt)/ (self.obj_recolectados + 1)
+
         if self.jugable:
             # input jugador (fuerza)
             ax = held_keys['d'] - held_keys['a']
@@ -139,10 +149,6 @@ class Bote(Entity):
                     math.atan2(self.vx, self.vz)
                 ) % 360
 
-        # Animación de ascenso al recolectar 3 objetos
-
-        else:
-            self.descuento -= (0.7 * time.dt)/ (self.obj_recolectados + 1)
 
         avance = abs(self.x - self.last_x) + abs(self.z - self.last_z)
         avance_esperado = self.velocidad * time.dt 
@@ -171,15 +177,17 @@ class Bote(Entity):
             self.rotation_y = math.degrees(math.atan2(self.direccion_x, self.direccion_z)) % 360
 
         # Interacción con el objetivo más cercano
-        if self.obj_entidades:
-            objetivo = min(self.obj_entidades, key=lambda p: dist2(p.position, self.position))
+        objetivos_activos = [o for o in self.obj_entidades if o.enabled]
+        if objetivos_activos:
+            objetivo = min(objetivos_activos, key=lambda p: dist2(p.position, self.position))
+
             v_obj = np.array([objetivo.x - self.x, objetivo.z - self.z])
             v_obj /= np.linalg.norm(v_obj) + 1e-8
 
             v_mov = np.array([self.direccion_x, self.direccion_z], dtype=float)
             v_mov /= np.linalg.norm(v_mov) + 1e-8
 
-            self.descuento += np.dot(v_obj, v_mov) * 0.4 * time.dt 
+            self.descuento += np.dot(v_obj, v_mov) * 0.4 * time.dt
 
         # Limites del mapa
         pos = np.array([self.x, self.z])
@@ -199,13 +207,13 @@ class Bote(Entity):
             self.descuento -= (1/dist_roca) * time.dt 
 
         # Recolectar objetivo
-        for objetivo in self.obj_entidades[:]:
-            if dist2(self.position, objetivo.position) < 0.3:
+        for objetivo in self.obj_entidades:
+            if objetivo.enabled and dist2(self.position, objetivo.position) < 0.5:
                 self.obj_recolectados += 1
                 self.descuento += 6 + self.obj_recolectados * 2
-                destroy(objetivo)
-                self.obj_entidades.remove(objetivo)
+                objetivo.enabled = False
                 break
+
 
         # Choque con roca
         if self.vivo and dist_roca < umbral_choque:
@@ -233,15 +241,36 @@ class Bote(Entity):
             dir_roca_1 = math.degrees(math.atan2(d1.position.x - self.position.x, d1.position.z - self.position.z))
             dist_roca_1 = dist2(self.position, d1.position)
 
-        # Objetivo más cercano
-        if self.obj_recolectados < 3 and self.obj_entidades:
-            objetivo_cercano = min(self.obj_entidades, key=lambda p: dist2(p.position, self.position))
-            dist_objetivo = dist2(self.position, objetivo_cercano.position)
-            dir_objetivo = math.degrees(math.atan2(objetivo_cercano.position.x - self.position.x,
-                                                  objetivo_cercano.position.z - self.position.z))
+        if self.obj_recolectados < 3:
+
+            mejor_obj = None
+            mejor_dist2 = float('inf')
+            sx, sz = self.x, self.z
+
+            for o in self.obj_entidades:
+                if not o.enabled:
+                    continue
+
+                dx = o.x - sx
+                dz = o.z - sz
+                d2 = dx*dx + dz*dz
+
+                if d2 < mejor_dist2:
+                    mejor_dist2 = d2
+                    mejor_obj = o
+
+            if mejor_obj is not None:
+                dist_objetivo = math.sqrt(mejor_dist2)
+                dir_objetivo = math.degrees(
+                    math.atan2(mejor_obj.x - sx, mejor_obj.z - sz)
+                )
+            else:
+                dist_objetivo = 0
+                dir_objetivo = 0
         else:
-            dir_objetivo = 0
             dist_objetivo = 0
+            dir_objetivo = 0
+
 
         return np.array([
             
@@ -380,7 +409,7 @@ for i in range(num_rocas):
     )
     rocas.append(d)
 
-visual_objetivo = crear_visual_obj(posiciones_obj_actuales)
+visual_objetivo = crear_visual_obj(posiciones_obj_actuales, scale=0.9)
 
 #=--=--=--=--=--=--=--=--=--=
 # BOTES PRE-SIMULACIÓN
@@ -388,23 +417,48 @@ visual_objetivo = crear_visual_obj(posiciones_obj_actuales)
 
 botes = []
 for i in range(num_botes):
-    if i == 0 and pesos_iniciales:
-        botes.append(Bote(red=RedNeuronal(pesos=pesos_iniciales)))
-        botes[i].color =  "#90EE90"
-        botes[0].texture = 'barco'
-    else:
-        botes.append(Bote(red=RedNeuronal(pesos=pesos_iniciales).mutar(0.4*i)))
-        botes[i].texture = 'barco_aux'
-        botes[i].color = [ "#CE80C7", "#5F9EA0" , "#FF7F50"][i-1]
+    botes.append(Bote(red=RedNeuronal(pesos=pesos_iniciales).mutar(0.45*i)))
+    botes[i].texture = 'barco_aux'
+    botes[i].color = ["#8DE7E7", "#D167D4", "#F5693F"][i-1]
 
 bote_jugador = Bote(jugable=True)
-bote_jugador.color = "#DEB887"
+bote_jugador.color = "#CCB08B"
 bote_jugador.texture = 'barco_aux'
 
 botes.append(bote_jugador)
 
 tiempo_restante = tiempo_limite 
-texto_puntaje = Text('', position=(-0.85, 0.45), scale=1)
+
+panel = Button(
+    text='',
+    position=(-0.80, 0.30),
+    scale=(0.1, 0.20),
+    color=color.black,
+    alpha=0.6,
+    disabled=True
+)
+
+
+texto_hud = Text(
+    '',
+    position=(-0.85, 0.45),
+    scale=1,
+    color=color.white
+)
+
+texto_botes = []
+for i in range(num_botes+1):
+    texto_botes.append(
+        Text(
+            '',
+            parent=panel,
+            position=(-0.15, 0.45 - 0.25*i),
+            scale=8,
+            color=botes[i].color
+        )
+    )
+
+#=--=--=--=--=--=--=--=--=--=
 
 # Puerto
 puerto = Entity(
@@ -436,11 +490,18 @@ def update():
     # Actualización top N botes
     frame_count += 1
     if frame_count % 20 == 1 or frame_count == 1:
-        top = sorted(botes, key=lambda b: b.puntaje, reverse=True)[:top_n]
-        mvp = top[0]
-        top_set = set(top)
+        ranking = sorted(botes, key=lambda b: b.puntaje, reverse=True)
 
-    texto_puntaje.text = f'Ciclo: {ciclo} | Tiempo: {tiempo_restante:.1f}s \n\nMejor: {int(top[0].puntaje)}'
+
+        texto_hud.text = f'Ciclo: {ciclo} | Tiempo: {tiempo_restante:.1f}s'
+    
+        for i, bote in enumerate(ranking):
+            texto_botes[i].color = bote.color
+            if bote.jugable == True:
+                texto_botes[i].text = f'{int(bote.puntaje)}**'
+            else:
+                texto_botes[i].text = f'{int(bote.puntaje)}'
+
 
 #=--=--=--=--=--=--=--=--=--=
 # INPUT (ESC PARA GUARDAR Y SALIR)
