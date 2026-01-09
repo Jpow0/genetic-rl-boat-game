@@ -55,7 +55,7 @@ def dist2(a, b):
     Más rápida que usar norma.
     """
     d = a - b
-    return d.x*d.x + d.y*d.y + d.z*d.z
+    return (d.x*d.x + d.y*d.y + d.z*d.z)**(1/2)
 
 
 def rocas_mas_cercanas(pos, rocas):
@@ -194,7 +194,7 @@ def generar_posicion_roca(i, sistematico):
 # VISUALES
 #=---=---=---=---=---=---=---=---=
 
-def crear_visual_obj(posiciones):
+def crear_visual_obj(posiciones,scale = 1):
     """
     Crea entidades visuales a partir de posiciones.
     """
@@ -203,7 +203,7 @@ def crear_visual_obj(posiciones):
     for p in posiciones:
         v = Entity(
             model='obj.bam',
-            scale=1,
+            scale=scale,
             position=p,
             color=color.white66,
             shader=lit_with_shadows_shader
@@ -258,22 +258,22 @@ def red_a_texto(red):
     texto = "pesos_iniciales = [\n\n"
 
     texto += "# =========================\n# w1\n# =========================\n"
-    texto += f"{arr(red.w1)},\n\n"
+    texto += f"np.array({arr(red.w1)}),\n\n"
 
     texto += "# =========================\n# w2\n# =========================\n"
-    texto += f"{arr(red.w2)},\n\n"
+    texto += f"np.array({arr(red.w2)}),\n\n"
 
     texto += "# =========================\n# w3\n# =========================\n"
-    texto += f"{arr(red.w3)},\n\n"
+    texto += f"np.array({arr(red.w3)}),\n\n"
 
     texto += "# =========================\n# b1\n# =========================\n"
-    texto += f"{arr(red.b1)},\n\n"
+    texto += f"np.array({arr(red.b1)}),\n\n"
 
     texto += "# =========================\n# b2\n# =========================\n"
-    texto += f"{arr(red.b2)},\n\n"
+    texto += f"np.array({arr(red.b2)}),\n\n"
 
     texto += "# =========================\n# b3\n# =========================\n"
-    texto += f"{arr(red.b3)}\n"
+    texto += f"np.array({arr(red.b3)})\n"
 
     texto += "]\n"
 
