@@ -8,7 +8,7 @@ This project explores genetic reinforcement learning through a simple boat simul
 Agents are controlled by small neural networks whose weights evolve over time via  
 **selection, mutation, and crossover** — no backpropagation involved.
 
-Also a playable version vs AI in `/code, func & asssets/main_jugable`!!
+Also a player vs agents version in `/code, func & asssets/main_jugable`!!
 
 ## Features
 
